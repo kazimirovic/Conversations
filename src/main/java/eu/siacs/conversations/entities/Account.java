@@ -9,6 +9,8 @@ import android.util.Pair;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -46,7 +48,8 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
     public static final String STATUS = "status";
     public static final String STATUS_MESSAGE = "status_message";
     public static final String RESOURCE = "resource";
-
+    public static final String PROXY_HOSTNAME = "proxy_hostname";
+    public static final String PROXY_PORT = "proxy_port";
     public static final String PINNED_MECHANISM_KEY = "pinned_mechanism";
 
     public static final int OPTION_USETLS = 0;
@@ -75,6 +78,7 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
     protected String avatar;
     protected String hostname = null;
     protected int port = 5222;
+    protected InetSocketAddress proxy = null;
     protected boolean online = false;
     private String rosterVersion;
     private String displayName = null;
@@ -88,13 +92,14 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
 
     public Account(final Jid jid, final String password) {
         this(java.util.UUID.randomUUID().toString(), jid,
-                password, 0, null, "", null, null, null, 5222, Presence.Status.ONLINE, null);
+                password, 0, null, "", null, null, null, 5222, Presence.Status.ONLINE, null, null);
     }
 
     private Account(final String uuid, final Jid jid,
                     final String password, final int options, final String rosterVersion, final String keys,
                     final String avatar, String displayName, String hostname, int port,
-                    final Presence.Status status, String statusMessage) {
+                    final Presence.Status status, String statusMessage,
+                    final InetSocketAddress proxy) {
         this.uuid = uuid;
         this.jid = jid;
         this.password = password;
@@ -113,6 +118,7 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
         this.port = port;
         this.presenceStatus = status;
         this.presenceStatusMessage = statusMessage;
+        this.proxy = proxy;
     }
 
     public static Account fromCursor(final Cursor cursor) {
@@ -127,6 +133,15 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
             Log.d(Config.LOGTAG, cursor.getString(cursor.getColumnIndex(USERNAME)) + "@" + cursor.getString(cursor.getColumnIndex(SERVER)));
             throw new AssertionError(ignored);
         }
+
+        InetSocketAddress proxy = null;
+        String hostName = cursor.getString(cursor.getColumnIndex(PROXY_HOSTNAME));
+        Integer port = cursor.isNull(cursor.getColumnIndex(PROXY_PORT)) ? null : cursor.getInt(cursor.getColumnIndex(PROXY_PORT));
+        if (hostName != null && port != null) {
+            proxy = new InetSocketAddress(hostName, port);
+        }
+
+
         return new Account(cursor.getString(cursor.getColumnIndex(UUID)),
                 jid,
                 cursor.getString(cursor.getColumnIndex(PASSWORD)),
@@ -138,7 +153,10 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
                 cursor.getString(cursor.getColumnIndex(HOSTNAME)),
                 cursor.getInt(cursor.getColumnIndex(PORT)),
                 Presence.Status.fromShowString(cursor.getString(cursor.getColumnIndex(STATUS))),
-                cursor.getString(cursor.getColumnIndex(STATUS_MESSAGE)));
+                cursor.getString(cursor.getColumnIndex(STATUS_MESSAGE)),
+                proxy
+
+        );
     }
 
     public boolean httpUploadAvailable(long filesize) {
@@ -259,6 +277,26 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
         this.port = port;
     }
 
+    public boolean usesProxy() {
+        return proxy != null;
+    }
+
+    public InetSocketAddress getProxy() {
+        return proxy;
+    }
+
+    public void setProxy(InetSocketAddress proxy) {
+        this.proxy = proxy;
+    }
+
+    public Integer getProxyPort() {
+        return proxy == null ? null : proxy.getPort();
+    }
+
+    public String getProxyHostName() {
+        return proxy == null ? null : proxy.getHostName();
+    }
+
     public State getStatus() {
         if (isOptionSet(OPTION_DISABLED)) {
             return State.DISABLED;
@@ -377,6 +415,8 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
         values.put(STATUS, presenceStatus.toShowString());
         values.put(STATUS_MESSAGE, presenceStatusMessage);
         values.put(RESOURCE, jid.getResource());
+        values.put(PROXY_HOSTNAME, getProxyHostName());
+        values.put(PROXY_PORT, getProxyPort());
         return values;
     }
 
@@ -477,7 +517,7 @@ public class Account extends AbstractEntity implements AvatarService.Avatarable 
 
     public Set<Jid> getBookmarkedJids() {
         final Set<Jid> jids = new HashSet<>();
-        for(final Bookmark bookmark : this.bookmarks) {
+        for (final Bookmark bookmark : this.bookmarks) {
             final Jid jid = bookmark.getJid();
             if (jid != null) {
                 jids.add(jid.asBareJid());
